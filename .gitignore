@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+data/
+experiments/masks/
+experiments/fullview_baseline/
+result/
+logs/
+tmp/
+*.mat
+*.zip
+*.pdf
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

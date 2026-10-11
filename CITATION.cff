@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: |
+  If you use this code, please cite both the underlying MGBCC paper and
+  the ICGBC submission listed below.
+title: "Mask-Aware Granular-Ball Contrastive Clustering for Incomplete Multi-View Data"
+type: code
+date-released: 2026-07-26
+url: "https://github.com/Hokkaido/mask-aware-mgbcc"
+keywords:
+  - incomplete multi-view clustering
+  - granular-ball computing
+  - contrastive learning
+  - unsupervised learning
+  - missing-view learning
+authors:
+  - family-names: Zhou
+    given-names: Jintian
+    affiliation: "University of Electronic Science and Technology of China"
+references:
+  - type: article
+    title: "Multi-view Granular-ball Contrastive Clustering"
+    authors:
+      - family-names: Su
+        given-names: Peng
+    journal: "AAAI"
+    year: 2025
+  - type: article
+    title: "Mask-Aware Granular-Ball Contrastive Clustering for Incomplete Multi-View Data"
+    authors:
+      - family-names: Zhou
+        given-names: Jintian
+    journal: "ICGBC"
+    year: 2026
+    status: submitted
+license: MIT

@@ -1,0 +1,61 @@
+{
+  "parent": "smalldata",
+  "dataset": "GLC24-PA-Subset",
+  "key_feature": "X",
+  "key_label": "Y",
+  "batch_size": 256,
+  "input_dims": [
+    51,
+    325,
+    325
+  ],
+  "num_samples": 6496,
+  "latent_dim": 128,
+  "loss_weights": [
+    1,
+    1,
+    0
+  ],
+  "autoencoder": {
+    "mid_archs": [
+      [
+        128,
+        64
+      ],
+      [
+        512,
+        256
+      ],
+      [
+        512,
+        256
+      ]
+    ],
+    "activation": "relu",
+    "batch_norm": true
+  },
+  "prediction": {
+    "mid_archs": [
+      [
+        128,
+        256,
+        128
+      ],
+      [
+        128,
+        256,
+        128
+      ],
+      [
+        128,
+        256,
+        128
+      ]
+    ],
+    "activation": "relu",
+    "batch_norm": true
+  },
+  "use_linear_projection": false,
+  "select_views": null,
+  "normalize": true
+}
