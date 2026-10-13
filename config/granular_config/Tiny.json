@@ -1,26 +1,13 @@
 {
   "parent": "smalldata",
-  "dataset": "Tiny",
   "batch_size": -1,
-  "input_dims": [8, 6],
-  "num_samples": 30,
   "latent_dim": 4,
   "loss_weights": [1, 1, 0],
   "autoencoder": {
     "mid_archs": [
       [16],
       [16]
-    ],
-    "activation": "relu",
-    "batch_norm": true
-  },
-  "prediction": {
-    "mid_archs": [
-      [4],
-      [4]
-    ],
-    "activation": "relu",
-    "batch_norm": true
+    ]
   },
   "use_linear_projection": false,
   "select_views": [0, 1],

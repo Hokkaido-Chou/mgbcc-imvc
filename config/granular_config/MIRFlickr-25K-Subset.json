@@ -1,11 +1,8 @@
 {
   "parent": "smalldata",
-  "dataset": "MIRFlickr-25K-Subset",
   "key_feature": "X",
   "key_label": "Y",
   "batch_size": 256,
-  "input_dims": [160, 144, 21],
-  "num_samples": 3048,
   "latent_dim": 128,
   "loss_weights": [1, 1, 0],
   "autoencoder": {
@@ -13,18 +10,7 @@
       [512, 256],
       [512, 256],
       [128, 64]
-    ],
-    "activation": "relu",
-    "batch_norm": true
-  },
-  "prediction": {
-    "mid_archs": [
-      [128, 256, 128],
-      [128, 256, 128],
-      [128, 256, 128]
-    ],
-    "activation": "relu",
-    "batch_norm": true
+    ]
   },
   "use_linear_projection": false,
   "select_views": null,

@@ -5,7 +5,7 @@ message: |
 title: "Mask-Aware Granular-Ball Contrastive Clustering for Incomplete Multi-View Data"
 type: code
 date-released: 2026-07-26
-url: "https://github.com/Hokkaido/mask-aware-mgbcc"
+url: "https://github.com/Hokkaido-Chou/mgbcc-imvc"
 keywords:
   - incomplete multi-view clustering
   - granular-ball computing

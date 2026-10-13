@@ -1,98 +1,92 @@
+"""Shared configuration, random-seed, and MATLAB data-loading helpers."""
+
+import json
 import random
+from pathlib import Path
+
+import h5py
 import numpy as np
 import torch
-import json
-import itertools
-
-try:
-    import hdf5storage as hdf
-except ImportError:
-    from scipy import io as hdf
+from scipy import io as scipy_io
 
 
 def init_torch(seed):
-    # 随机数种子
+    """Seed Python, NumPy, and PyTorch random-number generators."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
 
-def load_json(path,  encoding='utf-8'):
-    with open(path, "r", encoding=encoding) as fp:
-        params = json.load(fp)
-    return params
+def load_json(file_path, encoding="utf-8"):
+    with open(file_path, "r", encoding=encoding) as stream:
+        return json.load(stream)
 
 
-def _load_hdf5_mat(path, key_feature="data", key_label="labels"):
-    import h5py
-
-    with h5py.File(path, "r") as fp:
-        label = np.asarray(fp[key_label]).reshape((-1,))
-        num_smp = label.size
-        feature = []
-        data_ref = np.asarray(fp[key_feature]).reshape((-1,))
-        for ref in data_ref:
-            tmp = np.asarray(fp[ref]).squeeze()
-            if tmp.ndim == 1:
-                tmp = tmp.reshape((num_smp, -1))
-            elif tmp.shape[0] != num_smp and tmp.shape[-1] == num_smp:
-                tmp = tmp.T
-            feature.append(tmp)
-    return feature, label
+def _load_hdf5_mat(file_path, key_feature="data", key_label="labels"):
+    with h5py.File(file_path, "r") as stream:
+        labels = np.asarray(stream[key_label]).reshape(-1)
+        num_samples = labels.size
+        features = []
+        for reference in np.asarray(stream[key_feature]).reshape(-1):
+            view = np.asarray(stream[reference]).squeeze()
+            if view.ndim == 1:
+                view = view.reshape(num_samples, -1)
+            elif view.shape[0] != num_samples and view.shape[-1] == num_samples:
+                view = view.T
+            features.append(view)
+    return features, labels
 
 
 def _load_numbered_view_mat(data, key_label="Y"):
-    feature = []
-    view_idx = 1
-    while f"X{view_idx}" in data:
-        tmp = data[f"X{view_idx}"].squeeze()
-        if tmp.ndim > 2:
-            tmp = tmp.reshape((tmp.shape[0], -1))
-        feature.append(tmp)
-        view_idx += 1
-    if not feature:
-        raise KeyError("No numbered view keys like X1, X2 were found.")
-    label = data[key_label].reshape((-1,))
-    return feature, label
+    features = []
+    view_index = 1
+    while f"X{view_index}" in data:
+        view = data[f"X{view_index}"].squeeze()
+        if view.ndim > 2:
+            view = view.reshape(view.shape[0], -1)
+        features.append(view)
+        view_index += 1
+    if not features:
+        raise KeyError("No numbered view keys such as X1 and X2 were found.")
+    return features, data[key_label].reshape(-1)
 
 
-def load_mat(path, views=None, key_feature="data", key_label="labels"):
+def load_mat(file_path, views=None, key_feature="data", key_label="labels"):
+    """Load, shuffle, and select views from a MATLAB multi-view dataset."""
+    file_path = Path(file_path)
+    if not file_path.is_file():
+        raise FileNotFoundError(
+            f"Dataset file not found: {file_path}. "
+            "Place the prepared .mat file under data/smalldata/."
+        )
+
     try:
-        data = hdf.loadmat(path)
+        data = scipy_io.loadmat(file_path)
+    except (NotImplementedError, ValueError):
+        features, labels = _load_hdf5_mat(
+            file_path,
+            key_feature=key_feature,
+            key_label=key_label,
+        )
+    else:
         if key_feature in data and key_label in data:
-            feature = []
-            num_view = len(data[key_feature])
-            label = data[key_label].reshape((-1,))
-            for v in range(num_view):
-                tmp = data[key_feature][v][0].squeeze()
-                feature.append(tmp)
+            labels = data[key_label].reshape(-1)
+            features = [
+                data[key_feature][index][0].squeeze()
+                for index in range(len(data[key_feature]))
+            ]
         elif key_label in data:
-            feature, label = _load_numbered_view_mat(data, key_label=key_label)
-            num_view = len(feature)
+            features, labels = _load_numbered_view_mat(data, key_label=key_label)
         elif "Y" in data:
-            feature, label = _load_numbered_view_mat(data, key_label="Y")
-            num_view = len(feature)
+            features, labels = _load_numbered_view_mat(data, key_label="Y")
         else:
-            raise KeyError(f"Could not find feature/label keys in {path}")
-    except NotImplementedError:
-        feature, label = _load_hdf5_mat(path, key_feature=key_feature, key_label=key_label)
-        num_view = len(feature)
-    num_smp = label.size
-    # 打乱样本
-    rand_permute = np.random.permutation(num_smp)
-    for v in range(num_view):
-        feature[v] = feature[v][rand_permute]
-    label = label[rand_permute]
-    if views is None or len(views) == 0:
-        views = list(range(num_view))
-    views_feature = [feature[v] for v in views]
-    return views_feature, label
+            raise KeyError(f"Could not find feature and label keys in {file_path}")
 
-
-# 实现功能：返回参数组合的笛卡尔集
-def get_all_parameters(*parameters_range):
-    return itertools.product(*parameters_range)
-
+    permutation = np.random.permutation(labels.size)
+    features = [view[permutation] for view in features]
+    labels = labels[permutation]
+    selected_views = list(range(len(features))) if not views else views
+    return [features[index] for index in selected_views], labels

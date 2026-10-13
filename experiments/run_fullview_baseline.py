@@ -32,8 +32,14 @@ def to_jsonable(value):
 def parse_args():
     parser = argparse.ArgumentParser(description="Run one fixed paper-path MGBCC configuration.")
     parser.add_argument("--dataset", required=True)
-    parser.add_argument("--global_config", default="./config/granular_config/global.json")
-    parser.add_argument("--out_dir", default="./experiments/fullview_baseline")
+    parser.add_argument(
+        "--global_config",
+        default=os.path.join(ROOT, "config", "granular_config", "global.json"),
+    )
+    parser.add_argument(
+        "--out_dir",
+        default=os.path.join(ROOT, "experiments", "fullview_baseline"),
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--data_seed", type=int, default=None)

@@ -1,6 +1,6 @@
 # Mask-Aware Granular-Ball Contrastive Clustering
 
-Minimal source release for incomplete multi-view clustering. This branch contains the training code, dataset configurations, a fixed-run entry point, a missing-view mask generator, and a smoke test. It contains no datasets, masks, experimental logs, or result records.
+Minimal source release for incomplete multi-view clustering. The repository contains training code, dataset configurations, a fixed-run entry point, a missing-view mask generator, and a self-contained smoke test. It contains no datasets, masks, experimental logs, or result records.
 
 ## Install
 
@@ -12,24 +12,23 @@ pip install -r requirements.txt
 
 ## Datasets
 
-Place prepared `.mat` files in `data/smalldata/` under the repository root. The raw source folders used locally for the four derived subsets are in the sibling `../data/` directory; they are not part of this release. `DATA_MANIFEST.csv` records the expected filenames, sizes, sample/view/class counts, and SHA-256 hashes.
+Place prepared `.mat` files in `data/smalldata/` under the repository root. `DATA_MANIFEST.csv` records the expected filenames, sizes, sample/view/class counts, and SHA-256 hashes. Dataset files are excluded from Git and must be obtained in accordance with their original licenses.
 
-| Config | File | Raw source in the checked local workspace |
-|---|---|---|
-| BDGP | `BDGP.mat` | Prepared benchmark file only |
-| Caltech101-20 | `Caltech101-20.mat` | Prepared benchmark file only |
-| MNIST-USPS | `MNIST_USPS.mat` | Prepared benchmark file only |
-| GLC24-PA-Subset | `GLC24-PA-Subset.mat` | `../data/archive/` |
-| MIRFlickr-25K-Subset | `MIRFlickr-25K-Subset.mat` | `../data/mirflickr25k/` and `../data/mirflickr25k_annotations_v080/` |
-| N24News-Subset | `N24News-Subset.mat` | `../data/N24News/` |
-| Semi-iNat-2021-Subset | `Semi-iNat-2021-Subset.mat` | `../data/semi-inat-2021/` |
-| Tiny smoke test | `Tiny.mat` | Local test fixture |
+| Config | Required file |
+|---|---|
+| BDGP | `BDGP.mat` |
+| Caltech101-20 | `Caltech101-20.mat` |
+| MNIST-USPS | `MNIST_USPS.mat` |
+| GLC24-PA-Subset | `GLC24-PA-Subset.mat` |
+| MIRFlickr-25K-Subset | `MIRFlickr-25K-Subset.mat` |
+| N24News-Subset | `N24News-Subset.mat` |
+| Semi-iNat-2021-Subset | `Semi-iNat-2021-Subset.mat` |
 
-The benchmark files and Tiny fixture must be obtained separately. Verify copied files with `sha256sum data/smalldata/<file>.mat` or PowerShell `Get-FileHash data/smalldata/<file>.mat -Algorithm SHA256`.
+Verify copied files with `sha256sum data/smalldata/<file>.mat` or PowerShell `Get-FileHash data/smalldata/<file>.mat -Algorithm SHA256`.
 
 ## Run
 
-Run from the repository root. The smoke test needs `data/smalldata/Tiny.mat`:
+The smoke test creates its own temporary synthetic dataset and does not require a download:
 
 ```bash
 python test.py
@@ -42,7 +41,7 @@ python experiments/generate_missing_masks.py --dataset BDGP --rates 0.5 --seeds 
 python experiments/run_fullview_baseline.py --dataset BDGP --device cpu --seed 0 --epochs 50 --eval_interval 5 --scheduler_t_max 50 --missing_mode masked --missing_mask_path experiments/masks/BDGP/random_one_missing_view/rho_0.5_seed_0.npz --granular_loss_mode standard --p 2 --latent_dim 128 --representation_mode v1_128
 ```
 
-The mask generator writes to `experiments/masks/`, which Git ignores. Other supported dataset names are the configuration filenames under `config/granular_config/` without `.json`. The default `main.py` entry point performs a large parameter sweep; use `experiments/run_fullview_baseline.py` for a fixed run.
+The mask generator writes to `experiments/masks/`, which Git ignores. Other supported dataset names are the configuration filenames under `config/granular_config/` without `.json`. Run `python main.py --dataset <name>` for the published configuration, or use `experiments/run_fullview_baseline.py` when you need command-line overrides and a JSON result record.
 
 ## Included files
 
@@ -53,7 +52,7 @@ The mask generator writes to `experiments/masks/`, which Git ignores. Other supp
 - `test.py`: one-epoch Tiny smoke test.
 - `DATA_MANIFEST.csv`: local dataset verification metadata; no dataset content.
 
-The prepared datasets, raw data, generated masks, third-party official baselines, exploration code, experiment histories, reports, figures, and manuscript files are intentionally outside this minimal branch.
+Prepared datasets, raw data, generated masks, third-party official baselines, exploration code, experiment histories, reports, figures, and manuscript files are intentionally excluded.
 
 ## Citation and license
 

@@ -1,59 +1,16 @@
 {
   "parent": "smalldata",
-  "dataset": "N24News-Subset",
   "key_feature": "X",
   "key_label": "Y",
   "batch_size": 256,
-  "input_dims": [
-    512,
-    256,
-    325
-  ],
-  "num_samples": 9600,
   "latent_dim": 128,
-  "loss_weights": [
-    1,
-    1,
-    0
-  ],
+  "loss_weights": [1, 1, 0],
   "autoencoder": {
     "mid_archs": [
-      [
-        512,
-        256
-      ],
-      [
-        512,
-        256
-      ],
-      [
-        512,
-        256
-      ]
-    ],
-    "activation": "relu",
-    "batch_norm": true
-  },
-  "prediction": {
-    "mid_archs": [
-      [
-        128,
-        256,
-        128
-      ],
-      [
-        128,
-        256,
-        128
-      ],
-      [
-        128,
-        256,
-        128
-      ]
-    ],
-    "activation": "relu",
-    "batch_norm": true
+      [512, 256],
+      [512, 256],
+      [512, 256]
+    ]
   },
   "use_linear_projection": false,
   "select_views": null,

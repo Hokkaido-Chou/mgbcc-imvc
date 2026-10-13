@@ -1,4 +1,4 @@
-"""Mask-Aware Granular-Ball Contrastive Clustering — paper-path entry point.
+"""Training entry point for Mask-Aware Granular-Ball Contrastive Clustering.
 
 The public path of this module trains the V1 128-D multi-view autoencoder
 with the standard cross-view granular-ball contrastive loss
@@ -9,19 +9,12 @@ ball construction uses only the observed samples per view; the relation is
 constructed by co-observation identity.  Final clustering fuses each
 sample's available views before KMeans.
 
-All exploratory branches (reliability gating, anchor selectors, ball memory,
-temporal consistency, EMA evaluation, soft ball boundary, mapping
-diagnostics, etc.) live behind :mod:`granular._exploration` and are not
-imported by this module.
 """
 import argparse
 import os.path as path
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from itertools import product
 from sklearn.cluster import KMeans
 from sklearn.metrics import (
     adjusted_rand_score,
@@ -39,10 +32,8 @@ except ImportError:
         return None
 
 from granular.base import MVGBList
-from granular.gating import parse_rho_from_mask_path
 from granular.loss_factory import build_granular_loss
 from granular.missing_mechanism_diagnostics import summarize_missing_mechanisms
-from granular.tools import relation_of_views_gblists
 from model.autoencoder import MultiviewAutoEncoder, Normalize
 from utils.common import init_torch, load_json
 from utils.dataset import (
@@ -52,6 +43,17 @@ from utils.dataset import (
 )
 from utils.score import cluster_metric
 
+
+PROJECT_ROOT = path.dirname(path.abspath(__file__))
+
+
+def _project_path(value):
+    """Resolve a repository-relative path without depending on the current directory."""
+    if value is None or path.isabs(value):
+        return value
+    return path.join(PROJECT_ROOT, value)
+
+
 def run_on_setting(args, **kwargs):
     """Train and evaluate one (dataset, config) pair.
 
@@ -59,10 +61,13 @@ def run_on_setting(args, **kwargs):
     config.  Independent seed control is opt-in via ``data_seed`` /
     ``train_seed`` / ``eval_seed`` in ``kwargs``.
     """
-    global_params = load_json(args.global_config)
+    global_config_path = _project_path(args.global_config)
+    global_params = load_json(global_config_path)
     if global_params["config"] is None:
-        config_path = path.dirname(args.global_config)
+        config_path = path.dirname(global_config_path)
         global_params["config"] = path.join(config_path, args.dataset + ".json")
+    else:
+        global_params["config"] = _project_path(global_params["config"])
     ds_config = load_json(global_params["config"])
 
     for key in global_params:
@@ -79,22 +84,22 @@ def run_on_setting(args, **kwargs):
     eval_seed = int(ds_config.get("eval_seed", ds_config["seed"]))
     init_torch(seed=data_seed if independent_seed_control else ds_config["seed"])
 
-    # ---- Dataset ----
-    src = ds_config["src"]
+    src = _project_path(ds_config["src"])
     ds_file = ds_config.get("file_name", args.dataset + ".mat")
     ds_path = path.join(src, ds_config["parent"], ds_file)
     missing_mode = ds_config.get("missing_mode")
+    missing_mask_path = _project_path(ds_config.get("missing_mask_path"))
     missing_mechanism_diagnostics_enabled = bool(
         ds_config.get("missing_mechanism_diagnostics", False)
     )
     if missing_mechanism_diagnostics_enabled and missing_mode != "masked":
         raise ValueError("missing_mechanism_diagnostics requires missing_mode='masked'")
-    if ds_config.get("missing_mask_path") is not None and missing_mode in ("zero_fill", "masked"):
+    if missing_mask_path is not None and missing_mode in ("zero_fill", "masked"):
         dataset_cls = MaskedMultiviewDataset if missing_mode == "masked" else ZeroFillMultiviewDataset
         mv_dataset = dataset_cls(
             ds_path,
             ds_config["device"],
-            ds_config["missing_mask_path"],
+            missing_mask_path,
             key_feature=ds_config["key_feature"],
             key_label=ds_config["key_label"],
             views=ds_config["select_views"],
@@ -117,7 +122,6 @@ def run_on_setting(args, **kwargs):
         batch_size = len(mv_dataset)
     dataloader = DataLoader(mv_dataset, batch_size, shuffle=True, num_workers=0)
 
-    # ---- Model ----
     representation_mode = ds_config.get("representation_mode", "v1_128")
     if representation_mode != "v1_128":
         raise ValueError(
@@ -138,7 +142,6 @@ def run_on_setting(args, **kwargs):
     mv_aes.to(ds_config["device"])
     summary(mv_aes[0], (mv_dataset.view_dims[0],))
 
-    # ---- Optimizer / scheduler ----
     optimizer = torch.optim.Adam(
         mv_aes.parameters(),
         lr=ds_config["learning_rate"],
@@ -151,7 +154,7 @@ def run_on_setting(args, **kwargs):
 
     weights = ds_config["loss_weights"]
     criterion_rec = nn.MSELoss()
-    criterion_gra, _criterion_gra_standard = build_granular_loss(ds_config)
+    criterion_gra = build_granular_loss(ds_config)
     eval_interval = max(1, int(ds_config.get("eval_interval", 1)))
 
     kmeans = KMeans(
@@ -180,7 +183,7 @@ def run_on_setting(args, **kwargs):
         loss_con_avg = 0.0
         loss_rec_avg = 0.0
         mv_aes.train()
-        for bid, batch in enumerate(dataloader):
+        for batch in dataloader:
             if missing_mode == "masked":
                 x, y, obs_mask, sample_indices = batch
             else:
@@ -191,7 +194,6 @@ def run_on_setting(args, **kwargs):
             reconstruction_hs, x_rs = mv_aes(x)
             hs = mv_aes.contrast_hidden(reconstruction_hs)
 
-            # Mask-aware reconstruction loss.
             loss_rec = torch.tensor(0.0, device=ds_config["device"])
             for v in range(mv_dataset.num_view):
                 if obs_mask is None:
@@ -201,7 +203,6 @@ def run_on_setting(args, **kwargs):
                     if observed.sum().item() > 0:
                         loss_rec = loss_rec + criterion_rec(x[v][observed], x_rs[v][observed])
 
-            # Cross-view granular contrastive loss.
             if use_granular_training and len(hs) >= 2:
                 mv_gblist = MVGBList(
                     hs, labels=None, p=ds_config["p"],
@@ -229,7 +230,6 @@ def run_on_setting(args, **kwargs):
             print(f"epoch {epoch + 1}, loss_con {loss_con_avg:.4f}, loss_rec {loss_rec_avg:.4f}, eval skipped")
             continue
 
-        # ---- Evaluation ----
         mv_aes.eval()
         with torch.no_grad():
             reconstruction_view_hs, _ = mv_aes(mv_dataset.data)
@@ -301,80 +301,19 @@ def run_on_setting(args, **kwargs):
 
 
 def run():
-    """Parameter sweep over (latent_dim, p, learning_rate, normalize, batch_size)."""
-    parser = argparse.ArgumentParser(description="Command Line Params")
+    """Run one dataset with its published configuration."""
+    parser = argparse.ArgumentParser(description="Train MGBCC on one dataset.")
     parser.add_argument("--dataset", type=str, default="Caltech101-20")
     parser.add_argument(
         "--global_config",
         type=str,
-        default="./config/granular_config/global.json",
+        default=path.join(PROJECT_ROOT, "config", "granular_config", "global.json"),
         help="The path of the global config file.",
     )
     args = parser.parse_args()
-
-    latent_dim = [32, 64, 128, 256]
-    p = list(range(1, 17))
-    learning_rate = [1e-2, 1e-4]
-    batch_size = [128, 256, -1]
-    normalize = [True, False]
-    parameter_iter = product(latent_dim, p, learning_rate, normalize, batch_size)
-    dataset = args.dataset
-    save_path = "./result/" + dataset + ".dat"
-    with open(save_path, "w") as f:
-        for latent_dim, p, learning_rate, normalize, batch_size in parameter_iter:
-            try:
-                result = run_on_setting(
-                    args,
-                    batch_size=batch_size,
-                    latent_dim=latent_dim,
-                    p=p,
-                    learning_rate=learning_rate,
-                    normalize=normalize,
-                    dataset=dataset,
-                )
-                best_idx = int(np.argmax(result["ACC"]))
-                best_result = {
-                    "epoch": result["epoch"][best_idx],
-                    "ACC": result["ACC"][best_idx],
-                    "NMI": result["NMI"][best_idx],
-                    "ARI": result["ARI"][best_idx],
-                    "PUR": result["PUR"][best_idx],
-                    "sh": result["sh"][best_idx],
-                    "ch": result["ch"][best_idx],
-                    "db": result["db"][best_idx],
-                }
-                final_result = {
-                    "epoch": result["epoch"][-1],
-                    "ACC": result["ACC"][-1],
-                    "NMI": result["NMI"][-1],
-                    "ARI": result["ARI"][-1],
-                    "PUR": result["PUR"][-1],
-                    "sh": result["sh"][-1],
-                    "ch": result["ch"][-1],
-                    "db": result["db"][-1],
-                }
-                print(
-                    f"latent_dim={latent_dim}, p={p}, learning_rate={learning_rate}, "
-                    f"normalize={normalize}, batch_size={batch_size}, "
-                    f"best_result={best_result}, final_result={final_result}"
-                )
-                f.write(
-                    f"latent_dim={latent_dim}, p={p}, learning_rate={learning_rate}, "
-                    f"normalize={normalize}, batch_size={batch_size}, "
-                    f"best_result={best_result}, final_result={final_result}\n"
-                )
-            except Exception as e:  # noqa: BLE001 — sweep must keep going on any failure
-                print(
-                    f"latent_dim={latent_dim}, p={p}, learning_rate={learning_rate}, "
-                    f"normalize={normalize}, batch_size={batch_size}, "
-                    f"this setting failed: {e}"
-                )
-                f.write(
-                    f"latent_dim={latent_dim}, p={p}, learning_rate={learning_rate}, "
-                    f"normalize={normalize}, batch_size={batch_size}, "
-                    f"this setting failed: {e}\n"
-                )
-            f.flush()
+    result = run_on_setting(args)
+    final = {key: values[-1] for key, values in result.items() if values}
+    print("final", final)
 
 
 if __name__ == "__main__":

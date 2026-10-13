@@ -1,19 +1,8 @@
-"""V1 128-D multi-view autoencoder used by the paper path.
-
-The exploration-only representations (consensus / residual split,
-auxiliary residual, split-control) live in
-:mod:`model._exploration.autoencoders_exploration` and are not imported by
-this module.
-"""
+"""V1 128-D multi-view autoencoder used by MGBCC."""
 from typing import Sequence
 
 import torch
 import torch.nn as nn
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(iterable, *args, **kwargs):
-        return iterable
 
 
 class Encoder(nn.Module):
@@ -61,7 +50,6 @@ class Decoder(nn.Module):
                 ])
             middle_layers.append(nn.Sequential(*layer))
         middle_layers.append(nn.Linear(middle_dims[-2], middle_dims[-1]))
-        # 控制输出范围在0-1之间
         middle_layers.append(nn.Sigmoid())
         self.middle_layers = middle_layers
         self.middle_dims = middle_dims
@@ -72,7 +60,6 @@ class Decoder(nn.Module):
         return x
 
 
-# 重构和Prediction都可以使用自编码器的结构
 class AutoEncoder(nn.Module):
     def __init__(self,
                  input_dim: int,
@@ -93,10 +80,8 @@ class AutoEncoder(nn.Module):
 class MultiviewAutoEncoder(nn.Module):
     """Multi-view wrapper around per-view :class:`AutoEncoder`.
 
-    The paper path always uses ``representation_mode='v1_128'`` (one
-    128-D latent per view with a final L2 normalization layer appended
-    by the caller).  Other representation modes used during the research
-    phase have been removed from the public path.
+    The model uses one latent vector per view. The caller appends an L2
+    normalization layer to each encoder.
     """
 
     def __init__(self, view_dims, latent_dim, middle_encoders, use_linear_projection=False,

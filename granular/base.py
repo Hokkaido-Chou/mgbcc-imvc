@@ -1,61 +1,57 @@
-import torch
+"""Granular-ball data structures used by the contrastive loss."""
+
 import numpy as np
-import warnings
-from sklearn.cluster import KMeans, k_means
-from sklearn.exceptions import ConvergenceWarning
+import torch
+from sklearn.cluster import KMeans
 
 
-# For Clustering
 class GranularBall:
-    """class of the granular ball"""
+    """A group of samples represented by its center and mean radius."""
 
     def __init__(self, data, labels=None, indices=None):
-        """
-        :param data: 样本特征
-        :param labels: 可选的离线诊断标签；标准训练路径不传入
-        :param indices: 样本索引
-        """
         self.data = data
         self.labels = labels
-        if indices is None:
-            self.indices = np.arange(data.shape[0])
-        else:
-            self.indices = np.array([indices]).squeeze().reshape(-1,)
+        self.indices = (
+            np.arange(data.shape[0])
+            if indices is None
+            else np.asarray(indices).reshape(-1)
+        )
         self.num_smp, self.dim = data.shape
-        self.center = self.data.mean(0)
-        arr = torch.norm(self.data - self.center, p=2, dim=1)
-        # 各点到中心点距离的平均值
-        self.r = arr.mean()
+        self.center = data.mean(dim=0)
+        self.r = torch.norm(data - self.center, p=2, dim=1).mean()
 
     def split_balls(self, p):
-        # 将该粒球划分为k个小的粒球
-        k = max(self.num_smp // p, 1)
+        """Partition this ball into groups with approximately ``p`` samples."""
         data = self.data.detach().cpu().numpy()
         if p == 1:
-            # The singleton-ball control must retain every observed sample,
-            # including samples whose current embeddings happen to be equal.
-            k = data.shape[0]
-            y_part = np.arange(data.shape[0])
+            # Each observed sample must remain distinct, even for duplicate embeddings.
+            assignments = np.arange(data.shape[0])
+            num_balls = data.shape[0]
         else:
-            # 当data中有大量重复时
-            k = min(k, np.unique(data, axis=0).shape[0])
-            kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
-            y_part = kmeans.fit_predict(data)
-        # 根据标签对样本进行划分
-        y_part = torch.from_numpy(y_part).to(torch.long)
+            num_balls = max(self.num_smp // p, 1)
+            num_balls = min(num_balls, np.unique(data, axis=0).shape[0])
+            assignments = KMeans(
+                n_clusters=num_balls,
+                n_init=10,
+                random_state=42,
+            ).fit_predict(data)
+
+        assignments = torch.from_numpy(assignments).long()
         sub_balls = []
-        for i in range(k):
-            indices = torch.where(y_part == i)
-            sub_data = self.data[indices]
-            sub_labels = self.labels[indices] if self.labels is not None else None
-            sub_indices = self.indices[indices]
-            new_ball = GranularBall(sub_data, sub_labels, sub_indices)
-            sub_balls.append(new_ball)
-        return sub_balls, y_part
+        for ball_index in range(num_balls):
+            positions = torch.nonzero(assignments == ball_index, as_tuple=True)[0]
+            tensor_positions = positions.to(self.data.device)
+            sub_data = self.data[tensor_positions]
+            sub_labels = (
+                self.labels[tensor_positions] if self.labels is not None else None
+            )
+            sub_indices = self.indices[positions.numpy()]
+            sub_balls.append(GranularBall(sub_data, sub_labels, sub_indices))
+        return sub_balls, assignments
 
 
 class GBList:
-    """class of the list of granular ball"""
+    """A collection of granular balls for one view."""
 
     def __init__(self, data, labels=None, p=8, indices=None):
         self.data = data
@@ -63,125 +59,52 @@ class GBList:
         if indices is None:
             self.indices = np.arange(data.shape[0])
         else:
-            self.indices = np.asarray(indices.detach().cpu() if torch.is_tensor(indices) else indices).reshape(-1,)
-        self.y_parts = None
-        self.granular_balls = [GranularBall(data, labels, self.indices)]  # gbs is initialized with all data
-        self.split_granular_balls(p)
+            source = indices.detach().cpu().numpy() if torch.is_tensor(indices) else indices
+            self.indices = np.asarray(source).reshape(-1)
+        initial_ball = GranularBall(data, labels, self.indices)
+        self.granular_balls, self.y_parts = initial_ball.split_balls(p)
 
     def __len__(self):
         return len(self.granular_balls)
 
-    def __getitem__(self, i):
-        return self.granular_balls[i]
-
-    def split_granular_balls(self, p):
-        """
-        Split the balls, initialize the balls list.
-        :param p: If the number of samples of a ball is less than this value, stop splitting.
-        """
-        # gb_list = []
-        # for ball in self:
-        #     gb_list.extend(ball.split_balls(p))
-        # self.granular_balls = gb_list
-        gb_list, y_parts = self[0].split_balls(p)
-        self.granular_balls = gb_list
-        self.y_parts = y_parts
-
+    def __getitem__(self, index):
+        return self.granular_balls[index]
 
     def get_centers(self):
-        """
-        :return: the center of each ball.
-        """
-        return torch.vstack(list(map(lambda x: x.center, self.granular_balls)))
-
-    def get_rs(self):
-        """
-        :return: 返回半径r
-        """
-        return torch.vstack(list(map(lambda x: x.r, self.granular_balls))).squeeze()
-
-    def get_data(self):
-        """
-        :return: Data from all existing granular balls in the GBlist.
-        """
-        list_data = [ball.data for ball in self.granular_balls]
-        list_indices = [ball.indices for ball in self.granular_balls]
-        labels = None
-        if self.labels is not None:
-            labels = torch.cat([ball.labels for ball in self.granular_balls], dim=0)
-        return torch.cat(list_data, dim=0), labels, torch.cat(list_indices, dim=0)
-
-    def del_ball(self, min_smp=0):
-        T_ball = []
-        for ball in self.granular_balls:
-            if ball.num_smp >= min_smp:
-                T_ball.append(ball)
-        self.granular_balls = T_ball
-        self.data, self.labels, self.indices = self.get_data()
-
-    @torch.no_grad()
-    def affinity(self, spread=3):
-        # 获取所有中心点
-        centers = self.get_centers()
-        # 计算不同中心点的距离
-        dist = torch.cdist(centers, centers)
-        # 获取所有半径
-        rs = self.get_rs()
-        extra = rs.unsqueeze(0) + rs.unsqueeze(-1)
-        indicate = dist <= extra
-        indicate = torch.where(indicate, 1, 0).type(torch.float32)
-        # indicate = transitive_neighbor_relations(indicate, spread)
-        return indicate
+        """Return one center vector per granular ball."""
+        return torch.vstack([ball.center for ball in self.granular_balls])
 
 
 class MVGBList:
+    """Build one granular-ball collection for each nonempty observed view."""
+
     def __init__(self, mv_data, labels=None, p=8, view_masks=None, sample_indices=None):
-        """
-        :param mv_data: 多视图数据
-        :param labels: optional labels for offline diagnostics only
-        :param p:
-        """
-        self.num_view = len(mv_data)
         self.gblists = []
-        for i in range(self.num_view):
+        for view_index, view in enumerate(mv_data):
             if view_masks is None:
-                view_data = mv_data[i]
+                view_data = view
                 view_labels = labels
                 view_indices = sample_indices
             else:
-                observed = view_masks[:, i].bool()
-                if observed.sum().item() == 0:
+                observed = view_masks[:, view_index].bool()
+                if not observed.any().item():
                     continue
-                view_data = mv_data[i][observed]
+                view_data = view[observed]
                 view_labels = labels[observed] if labels is not None else None
-                view_indices = sample_indices[observed] if sample_indices is not None else None
-            gblist = GBList(view_data, view_labels, p=p, indices=view_indices)
-            gblist.source_view_index = i
-            self.gblists.append(gblist)
-        self.num_view = len(self.gblists)
+                view_indices = (
+                    sample_indices[observed] if sample_indices is not None else None
+                )
+            granular_balls = GBList(
+                view_data,
+                view_labels,
+                p=p,
+                indices=view_indices,
+            )
+            granular_balls.source_view_index = view_index
+            self.gblists.append(granular_balls)
 
     def __len__(self):
-        return self.num_view
+        return len(self.gblists)
 
-    def __getitem__(self, i):
-        return self.gblists[i]
-
-
-# 是否包含同一个样本，针对不同视图的两个粒球
-def contain_same_sample(ball0: GranularBall, ball1: GranularBall):
-    n0, n1 = ball0.num_smp, ball1.num_smp
-    for i in range(n0):
-        for j in range(n1):
-            if ball0.indices[i] == ball1.indices[j]:
-                return True
-    return False
-
-
-# 传递邻接（重叠）关系
-def transitive_neighbor_relations(a, k=3):
-    while k > 0:
-        a_ = torch.where(a @ a > 0, 1., 0.)
-        a_ = torch.where(torch.logical_or(a, a_), 1., 0.)
-        a = a_
-        k -= 1
-    return a
+    def __getitem__(self, index):
+        return self.gblists[index]

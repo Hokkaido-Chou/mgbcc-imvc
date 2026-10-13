@@ -1,72 +1,27 @@
+"""Clustering evaluation metrics."""
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
-from scipy.stats import mode
-from sklearn.metrics import cluster, normalized_mutual_info_score, adjusted_rand_score
+from sklearn.metrics import cluster, normalized_mutual_info_score
 
 
 def accuracy_score(y_true, y_pred):
-    """
-    Calculate clustering accuracy.
-    # Arguments
-        y: true labels, numpy.array with shape `(n_samples,)`
-        y_pred: predicted labels, numpy.array with shape `(n_samples,)`
-    # Return
-        accuracy, in [0,1]
-    """
-    # compute contingency matrix (also called confusion matrix)
-    contingency_matrix = cluster.contingency_matrix(y_true, y_pred)
-
-    # Find optimal one-to-one mapping between cluster labels and true labels
-    from scipy.optimize import linear_sum_assignment
-    row_ind, col_ind = linear_sum_assignment(-contingency_matrix)
-
-    # Return cluster accuracy
-    return contingency_matrix[row_ind, col_ind].sum() / np.sum(contingency_matrix)
+    """Return clustering accuracy after optimal label assignment."""
+    contingency = cluster.contingency_matrix(y_true, y_pred)
+    row_indices, column_indices = linear_sum_assignment(-contingency)
+    return contingency[row_indices, column_indices].sum() / contingency.sum()
 
 
 def purity_score(y_true, y_pred):
-    """
-    Calculate clustering purity.
-    # Arguments
-        y: true labels, numpy.array with shape `(n_samples,)`
-        y_pred: predicted labels, numpy.array with shape `(n_samples,)`
-    # Return
-        purity, in [0,1]
-    """
-    # compute contingency matrix (also called confusion matrix)
-    contingency_matrix = cluster.contingency_matrix(y_true, y_pred)
-
-    # return purity
-    return np.sum(np.amax(contingency_matrix, axis=0)) / np.sum(contingency_matrix)
-
-
-def nmi_score(y_true, y_pred):
-    """
-    Calculate clustering normalized mutual information (NMI).
-    # Arguments
-        y: true labels, numpy.array with shape `(n_samples,)`
-        y_pred: predicted labels, numpy.array with shape `(n_samples,)`
-    # Return
-        NMI, in [0,1]
-    """
-
-    # return NMI
-    return normalized_mutual_info_score(y_true, y_pred)
+    """Return clustering purity."""
+    contingency = cluster.contingency_matrix(y_true, y_pred)
+    return np.amax(contingency, axis=0).sum() / contingency.sum()
 
 
 def cluster_metric(y_true, y_pred):
-    """
-    Calculate clustering metrics, including accuracy, NMI and purity.
-    # Arguments
-        y: true labels, numpy.array with shape `(n_samples,)`
-        y_pred: predicted labels, numpy.array with shape `(n_samples,)`
-    # Return
-        [accuracy, NMI, purity], in [0,1]
-    """
-    # compute accuracy, NMI and purity
-    acc = accuracy_score(y_true, y_pred)
-    nmi = nmi_score(y_true, y_pred)
-    pur = purity_score(y_true, y_pred)
-
-    # return metrics
-    return acc, nmi, pur
+    """Return clustering accuracy, normalized mutual information, and purity."""
+    return (
+        accuracy_score(y_true, y_pred),
+        normalized_mutual_info_score(y_true, y_pred),
+        purity_score(y_true, y_pred),
+    )

@@ -56,10 +56,13 @@ def summarize_mask(mask, incomplete_rate, seed, dataset, protocol):
 def main():
     parser = argparse.ArgumentParser(description="Generate reproducible incomplete-view masks.")
     parser.add_argument("--dataset", required=True)
-    parser.add_argument("--global_config", default="./config/granular_config/global.json")
+    parser.add_argument(
+        "--global_config",
+        default=os.path.join(ROOT, "config", "granular_config", "global.json"),
+    )
     parser.add_argument("--rates", default="0.1,0.3,0.5,0.7")
     parser.add_argument("--seeds", default="0,1,2,3,4")
-    parser.add_argument("--out_root", default="./experiments/masks")
+    parser.add_argument("--out_root", default=os.path.join(ROOT, "experiments", "masks"))
     args = parser.parse_args()
 
     global_params = load_json(args.global_config)
@@ -71,7 +74,10 @@ def main():
         ds_config.setdefault(key, value)
 
     ds_file = ds_config.get("file_name", args.dataset + ".mat")
-    ds_path = os.path.join(ds_config["src"], ds_config["parent"], ds_file)
+    src = ds_config["src"]
+    if not os.path.isabs(src):
+        src = os.path.join(ROOT, src)
+    ds_path = os.path.join(src, ds_config["parent"], ds_file)
     data, labels = load_mat(
         ds_path,
         views=ds_config["select_views"],
